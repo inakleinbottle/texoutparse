@@ -1,17 +1,27 @@
-
-
+#
+#
+"""
+Parser for LaTeX log files.
+"""
 import re
 
 
-
 class LogFileMessage:
+    """
+    Helper class for storing log file messages.
+
+    Messages and attributes of the messages can be accessed and added using
+    the item notation.
+    """
 
     def __init__(self):
         self.info = {}
         self.context_lines = []
 
     def __str__(self):
-        return "\n".join(self.context_lines)
+        return ('Message('
+                + ', '.join(f'{k}: {v}' for k, v in self.info.items())
+                + ')')
 
     def __getitem__(self, item):
         try:
@@ -29,16 +39,18 @@ class LatexLogParser:
     """
 
     error = re.compile(
-            "^(?:! (LaTeX|Package (\w+)) Error: (.*)|Error (.*)|! (.*))"
+            r"^(?:! (LaTeX|Package|Class)( \w+)? Error: (.*)|! (.*))"
             )
     warning = re.compile(
-            "^(?:! )?((?:La|pdf)TeX|Package|Class) (\w+) Warning:(.*)"
+            r"^((?:La|pdf)TeX|Package|Class)( \w+)? Warning: (.*)"
             )
     badbox = re.compile(
-            "^(Over|Under)full "
-            "\\\\([hv])box "
-            "\((?:badness (\d+)|(\d+(?:\.\d+)?pt) too \w+)\) .*"
-            "(?:at lines (\d+)--(\d+)|at line (\d+))"
+            r"^(Over|Under)full "
+            r"\\([hv])box "
+            r"\((?:badness (\d+)|(\d+(?:\.\d+)?pt) too \w+)\) (?:"
+            r"(?:(?:in paragraph|in alignment|detected) "
+            r"(?:at lines (\d+)--(\d+)|at line (\d+)))"
+            r"|(?:has occurred while [\\]output is active [\[][\]]))"
             )
 
     def __init__(self, context_lines=2):
@@ -120,7 +132,7 @@ class LatexLogParser:
 
         # single or multi-line
         if match.group(7) is not None:
-            message['lines'] = (match.group(7). match.group(7))
+            message['lines'] = (match.group(7), match.group(7))
         else:
             message['lines'] = (match.group(5), match.group(6))
 
@@ -160,7 +172,40 @@ class LatexLogParser:
         return message
 
     def process_error(self, match):
-        pass
+        """
+        Process a warning regex match and return the log message object.
+
+        :param match: regex match object to process
+        :return: LogFileMessage object
+        """
+
+        # Regex match groups
+        # 0 - Whole match (line)
+        # 1 - Type (LaTeX|Package|Class)
+        # 2 - Package or Class (\w+)
+        # 3 - Error message for typed error (.*)
+        # 4 - TeX error message (.*)
+
+        message = LogFileMessage()
+        if match.group(1) is not None:
+            message['type'] = type_ = match.group(1)
+
+            if type_ == 'Package':
+                # Package name should be group 2
+                message['package'] = match.group(2)
+            elif type_ == 'Class':
+                # Class name should be group 2
+                message['class'] = match.group(2)
+            elif match.group(2) is not None:
+                message['component'] = match.group(2)
+
+            message['message'] = match.group(3)
+        else:
+            message['message'] = match.group(4)
+
+        self.errors.append(message)
+        return message
+
 
 
 
