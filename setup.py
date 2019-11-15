@@ -20,12 +20,12 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     py_modules=['texoutparse'],
-    version="1.0.0",
+    version="1.1.0",
     tests_require=['pytest'],
     test_suite='tests',
-    requires_python=">=3.6.0",
+    python_requires=">=3.6.0",
     license="MIT",
-    clasifiers=[
+    classifiers=[
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
