@@ -80,19 +80,27 @@ class LatexLogParser:
     warning = re.compile(
             r"^((?:La|pdf)TeX|Package|Class)(?: (\w+))? [wW]arning(?: \(([\\]?\w+)\))?: (.*)"
             )
+
+    info = re.compile(
+            r"^((?:La|pdf)TeX|Package|Class)(?: (\w+))? [iI]nfo(?: \(([\\]?\w+)\))?: (.*)"
+            )
     badbox = re.compile(
             r"^(Over|Under)full "
             r"\\([hv])box "
             r"\((?:badness (\d+)|(\d+(?:\.\d+)?pt) too \w+)\) (?:"
             r"(?:(?:in paragraph|in alignment|detected) "
             r"(?:at lines (\d+)--(\d+)|at line (\d+)))"
-            r"|(?:has occurred while [\\]output is active [\[][\]]))"
+            r"|(?:has occurred while [\\]output is active [\[](\d+)?[\]]))"
             )
+    missing_ref = re.compile(
+        r"^LaTeX Warning: (Citation|Reference) `([^']+)' on page (\d+) undefined on input line (\d+)\."
+    )
 
     def __init__(self, context_lines=2):
         self.warnings = []
         self.errors = []
         self.badboxes = []
+        self.missing_refs = []
         self.context_lines = context_lines
 
     def __str__(self):
@@ -133,7 +141,12 @@ class LatexLogParser:
         :returns: LogFileMessage object or None
         """
 
-        # Badboxes are probably most common, so match those first
+        # Missings refs are very common, try those first
+        match = self.missing_ref.match(line)
+        if match is not None:
+            return self.process_missing_ref(match)
+
+        # Badboxes are next most common, so match those first
         match = self.badbox.match(line)
         if match is not None:
             return self.process_badbox(match)
@@ -252,7 +265,6 @@ class LatexLogParser:
             if match.group(3) is not None:
                 message['extra'] = match.group(3)
 
-
             message['message'] = match.group(4)
         else:
             message['message'] = match.group(5)
@@ -260,7 +272,21 @@ class LatexLogParser:
         self.errors.append(message)
         return message
 
+    def process_missing_ref(self, match):
+        """
+        Process a missing reference regex match and return log message object.
 
+        :param match: regex match object to process
+        :return: LogFileMessage object.
+        """
+        message = LogFileMessage()
+        message["type"] = f"Missing {match.group(1)}"
+        message["key"] = match.group(2)
+        message["page"] = match.group(3)
+        message["line"] = match.group(4)
+
+        self.missing_refs.append(message)
+        return message
 
 
 

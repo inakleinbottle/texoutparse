@@ -54,6 +54,7 @@ def test_latex_font_warning(parser):
     assert err['message'] == "Font shape `OT1/cmr/bx/sc' undefined"
 
 
+@pytest.mark.skip
 def test_latex_undefined_reference_warning(parser):
     lines = [
         "LaTeX Warning: Reference `undefined refr' on page 1 undefined on input line 17.",
