@@ -26,7 +26,13 @@ the log file and collect the statistics.
 from texoutparse import LatexLogParser
 
 parser = LatexLogParser()
+
+# If using a unicode-supporting engine, e.g. XeTeX or LuaTeX/LuaHBTeX
 with open('sample.log') as f:
+    parser.process(f)
+
+# If using an 8-bit engine, e.g. TeX or pdfTeX
+with open('sample.log', encoding='latin-1') as f:
     parser.process(f)
 ```
 The `parser` object contains lists of errors, warnings, and bad boxes, each described by an 

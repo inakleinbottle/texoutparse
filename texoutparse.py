@@ -1,8 +1,14 @@
 """
 Parser for LaTeX log files.
 """
+import io
 import re
+import codecs
+import warnings
 from collections import deque
+
+
+KNOWN_NONUNICODE_ENGINES = ['TeX', 'eTeX', 'pdfTeX']
 
 
 class LogFileMessage:
@@ -74,15 +80,18 @@ class LatexLogParser:
     list.
     """
 
+    engine = re.compile(
+            r"^This is (\w+), Version ([\w\d.-]+)"
+            )
     error = re.compile(
-            r"^(?:! ((?:La|pdf)TeX|Package|Class)(?: (\w+))? [eE]rror(?: \(([\\]?\w+)\))?: (.*)|! (.*))"
+            r"^(?:! ((?:\w*)TeX|Package|Class)(?: (\w+))? [eE]rror(?: \(([\\]?\w+)\))?: (.*)|! (.*))"
             )
     warning = re.compile(
-            r"^((?:La|pdf)TeX|Package|Class)(?: (\w+))? [wW]arning(?: \(([\\]?\w+)\))?: (.*)"
+            r"^((?:\w*)TeX|Package|Class)(?: (\w+))? [wW]arning(?: \(([\\]?\w+)\))?: (.*)"
             )
 
     info = re.compile(
-            r"^((?:La|pdf)TeX|Package|Class)(?: (\w+))? [iI]nfo(?: \(([\\]?\w+)\))?: (.*)"
+            r"^((?:\w*)TeX|Package|Class)(?: (\w+))? [iI]nfo(?: \(([\\]?\w+)\))?: (.*)"
             )
     badbox = re.compile(
             r"^(Over|Under)full "
@@ -101,6 +110,7 @@ class LatexLogParser:
         self.errors = []
         self.badboxes = []
         self.missing_refs = []
+        self.version = None
         self.context_lines = context_lines
 
     def __str__(self):
@@ -117,6 +127,8 @@ class LatexLogParser:
 
         :param lines: Iterable over lines of log.
         """
+        self.process_header(lines)
+
         lines_iterable = _LineIterWrapper(lines, self.context_lines)
 
         # cache the line processor for speed
@@ -207,7 +219,7 @@ class LatexLogParser:
 
         # Regex match groups
         # 0 - Whole match (line)
-        # 1 - Type ((?:La|pdf)TeX|Package|Class)
+        # 1 - Type ((?:\w*)TeX|Package|Class)
         # 2 - Package or Class name (\w*)
         # 3 - extra
         # 4 - Warning message (.*)
@@ -243,7 +255,7 @@ class LatexLogParser:
 
         # Regex match groups
         # 0 - Whole match (line)
-        # 1 - Type (LaTeX|Package|Class)
+        # 1 - Type ((?:\w*)TeX|Package|Class)
         # 2 - Package or Class (\w+)
         # 3 - extra (\(([\\]\w+)\))
         # 4 - Error message for typed error (.*)
@@ -288,7 +300,37 @@ class LatexLogParser:
         self.missing_refs.append(message)
         return message
 
+    def process_engine(self, match):
+        message = LogFileMessage()
+        message['engine'] = match.group(1)
+        message['version'] = match.group(2)
 
+        self.engine = message
+        return message
 
+    def process_header(self, lines):
+        """
+        The first line of output should contain information about the engine, e.g. LuaHBTeX, Version 1.13.0, among other information.
+        We attempt to read it and silently fail if we can't since it is not crucial for the subsequent work of the parser.
+        """
+        try:
+            first_line = next(lines)
+        except StopIteration:
+            return
 
+        engine_match = self.engine.match(first_line)
+        if engine_match is None:
+            return
 
+        self.process_engine(engine_match)
+        engine_name = self.engine['engine']
+
+        if (isinstance(lines, io.TextIOBase) and codecs.lookup(lines.encoding) == codecs.lookup('utf-8') and engine_name in KNOWN_NONUNICODE_ENGINES):
+            warnings.warn(
+                ' '.join((
+                    f'You are attempting to read unicode output from the non-unicode engine {engine_name}.',
+                    'This will likely result in a UnicodeDecodeError.',
+                    "Consider changing the encoding to 'latin-1' when reading the file."
+                )),
+                UnicodeWarning
+            )
