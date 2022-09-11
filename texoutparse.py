@@ -75,7 +75,8 @@ class LatexLogParser:
     """
 
     error = re.compile(
-            r"^(?:! ((?:La|pdf)TeX|Package|Class)(?: (\w+))? [eE]rror(?: \(([\\]?\w+)\))?: (.*)|! (.*))"
+           # r"^(?:! ((?:La|pdf)TeX|Package|Class)(?: (\w+))? [eE]rror(?: \(([\\]?\w+)\))?: (.*)|! (.*))"
+            r"^(.*)((?:La|pdf)TeX|Package|Class)(?: (\w+))? [eE]rror(?: \(([\\]?\w+)\))?: (.*)|! (.*)"
             )
     warning = re.compile(
             r"^((?:La|pdf)TeX|Package|Class)(?: (\w+))? [wW]arning(?: \(([\\]?\w+)\))?: (.*)"
@@ -84,6 +85,7 @@ class LatexLogParser:
     info = re.compile(
             r"^((?:La|pdf)TeX|Package|Class)(?: (\w+))? [iI]nfo(?: \(([\\]?\w+)\))?: (.*)"
             )
+            
     badbox = re.compile(
             r"^(Over|Under)full "
             r"\\([hv])box "
@@ -94,6 +96,10 @@ class LatexLogParser:
             )
     missing_ref = re.compile(
         r"^LaTeX Warning: (Citation|Reference) `([^']+)' on page (\d+) undefined on input line (\d+)\."
+    )
+    
+    error2 = re.compile(
+        r"^(.+):(\d+): (.+)"
     )
 
     def __init__(self, context_lines=2):
@@ -156,11 +162,16 @@ class LatexLogParser:
         if match is not None:
             return self.process_warning(match)
 
+        # Now try error2
+        match = self.error2.match(line)
+        if match is not None:
+            return self.process_error2(match)
+
         # Now try errors
         match = self.error.match(line)
         if match is not None:
             return self.process_error(match)
-
+            
         return None
 
     def process_badbox(self, match):
@@ -235,7 +246,7 @@ class LatexLogParser:
 
     def process_error(self, match):
         """
-        Process a warning regex match and return the log message object.
+        Process an error regex match and return the log message object.
 
         :param match: regex match object to process
         :return: LogFileMessage object
@@ -243,31 +254,34 @@ class LatexLogParser:
 
         # Regex match groups
         # 0 - Whole match (line)
-        # 1 - Type (LaTeX|Package|Class)
-        # 2 - Package or Class (\w+)
-        # 3 - extra (\(([\\]\w+)\))
-        # 4 - Error message for typed error (.*)
-        # 5 - TeX error message (.*)
+        # 1 - File Name or "!"
+        # 2 - Type (LaTeX|Package|Class)
+        # 3 - Package or Class (\w+)
+        # 4 - extra (\(([\\]\w+)\))
+        # 5 - Error message for typed error (.*)
+        # 6 - TeX error message (.*)
 
         message = LogFileMessage()
-        if match.group(1) is not None:
-            message['type'] = type_ = match.group(1)
+        if match.group(2) is not None:
+            if match.group(1).strip() != "!":
+                message['location'] = match.group(1)
+            message['type'] = type_ = match.group(2)
 
             if type_ == 'Package':
                 # Package name should be group 2
-                message['package'] = match.group(2)
+                message['package'] = match.group(3)
             elif type_ == 'Class':
                 # Class name should be group 2
-                message['class'] = match.group(2)
-            elif match.group(2) is not None:
-                message['component'] = match.group(2)
+                message['class'] = match.group(3)
+            elif match.group(3) is not None:
+                message['component'] = match.group(3)
 
-            if match.group(3) is not None:
-                message['extra'] = match.group(3)
+            if match.group(4) is not None:
+                message['extra'] = match.group(4)
 
-            message['message'] = match.group(4)
-        else:
             message['message'] = match.group(5)
+        else:
+            message['message'] = match.group(6)
 
         self.errors.append(message)
         return message
@@ -288,7 +302,29 @@ class LatexLogParser:
         self.missing_refs.append(message)
         return message
 
+    def process_error2(self, match):
+        """
+        Process an error regex match for pdflatex option -file-line-error and return the log message object.
 
+        :param match: regex match object to process
+        :return: LogFileMessage object
+        """
+        
+        # Regex match groups
+        # 0 - Whole match (line)
+        # 1 - File Name
+        # 2 - Line in file
+        # 3 - Error or warning message
+        message = LogFileMessage()
+        if match.group(1).strip() != "!":
+            message['file_name'] = match.group(1)
+        message['type'] = "other"
+        message['line_number'] = match.group(2)
+        message['message'] = match.group(3)
+
+        # lets append to the errors for now...
+        self.errors.append(message)
+        return message
 
 
 
